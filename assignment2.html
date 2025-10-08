@@ -45,7 +45,7 @@
 
             <tr>
                 <td>Zoom</td>
-                <td><input value="0" id="scale" type="range" min="0" max="200" value="0">
+                <td><input value="20" id="scale" type="range" min="0" max="200" value="0">
                 </td>
             </tr>
 
@@ -62,6 +62,15 @@
                 </td>
             </tr>
 
+            <tr>
+                <td>Projection type</td>
+                <td><select id="projection" name="projection_type">
+                    <option value="perspective">Perspective</option>
+                    <option value="orthographic">Orthographic</option>
+                    </select>
+                </td>
+            </tr>
+            
         </table>
     </div>
 </body>

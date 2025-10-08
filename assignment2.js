@@ -9,6 +9,15 @@ var uniformModelViewLoc = null;
 var uniformProjectionLoc = null;
 var heightmapData = null;
 
+var posAttribLoc = null;
+var posBuffer = null
+
+var xRotation = 0;
+var yRotation = 0;
+var zRotation = 0;
+
+var eyeX = 0, eyeZ = 0;
+
 function processImage(img)
 {
 	// draw the image into an off-screen canvas
@@ -49,7 +58,7 @@ function processImage(img)
 	return {
 		data: heightArray,
 		width: sw,
-		height: sw
+		height: sh
 	};
 }
 
@@ -70,15 +79,34 @@ window.loadImageFile = function(event)
 		{
 			// heightmapData is globally defined
 			heightmapData = processImage(img);
-			
 			/*
-				TODO: using the data in heightmapData, create a triangle mesh
-					heightmapData.data: array holding the actual data, note that 
-					this is a single dimensional array the stores 2D data in row-major order
+				using the data in heightmapData, create a triangle mesh
+				heightmapData.data: array holding the actual data, note that 
+				this is a single dimensional array the stores 2D data in row-major order
 
-					heightmapData.width: width of map (number of columns)
-					heightmapData.height: height of the map (number of rows)
+				heightmapData.width: width of map (number of columns)
+				heightmapData.height: height of the map (number of rows)
 			*/
+			var mesh = triangleMesh(heightmapData.data, heightmapData.width, heightmapData.height);
+	
+			var imageVertices = new Float32Array(mesh);
+			var posBuffer = createBuffer(gl, gl.ARRAY_BUFFER, imageVertices);
+
+			posAttribLoc = gl.getAttribLocation(program, "position");
+
+			vertexCount = mesh.length/3;
+
+			vao = createVAO(gl, 
+				// positions
+				posAttribLoc, posBuffer, 
+
+				// normals (unused in this assignments)
+				null, null, 
+
+				// colors (not needed--computed by shader)
+				null, null
+			);
+
 			console.log('loaded image: ' + heightmapData.width + ' x ' + heightmapData.height);
 
 		};
@@ -95,6 +123,66 @@ window.loadImageFile = function(event)
 }
 
 
+function triangleMesh(data, width, height){
+	var vertices = [];
+
+	var indecesA;
+	var indecesB;
+	var indecesC;
+	var indecesD;
+
+	var vertexA;
+	var vertexB;
+	var vertexC;
+	var vertexD;
+
+	//Translate to the origin.
+	var xMid = (width - 1)/2;
+	var zMid = (height - 1)/2;
+
+	// Scale into normalized range: (-1, +1)
+	var scale = 4.0/Math.max(width, height);
+
+		//The width and height of the map should be mapped to the X and Z dimensions respectively.
+		//The height of the terrain will be mapped to the Y axis
+	for (var z=0;z<height - 1;z++) {
+		for (var x=0;x<width - 1;x++) {
+
+			//1D indeces for four corners of each cell
+			indecesA = (z * width) + x;
+			indecesB = (z * width) + x + 1;
+			indecesC = ((z + 1) * width) + x;
+			indecesD = ((z + 1) * width) + x + 1;
+
+			//Creating 2 triangles using heightdata to fill in a pixel coordinate
+			vertexA = [((x - xMid)*scale ), data[indecesA] * 2 - 1, (z - zMid)*scale ];
+			vertexB = [(x + 1 - xMid)*scale, data[indecesB] *2 - 1, (z - zMid)*scale ];
+			vertexC = [(x - xMid)*scale , data[indecesC] *2 - 1, (z + 1 - zMid)*scale ];
+			vertexD = [(x + 1 - xMid)*scale , data[indecesD] *2 - 1, (z + 1 - zMid)*scale ];
+	
+
+			//Two Triangles per x and y pair 
+			var triangle1 = [ //First Triangle 
+				...vertexA,
+				...vertexC,		
+				...vertexB,
+			];
+
+			// console.log(triangle1);
+			vertices.push(...triangle1)
+
+			var triangle2 = [ //Second Triangle
+				...vertexB,
+				...vertexC,		
+				...vertexD,
+			];
+			vertices.push(...triangle2);
+		}
+	}
+	return vertices;
+}
+
+
 function setupViewMatrix(eye, target)
 {
     var forward = normalize(subtract(target, eye));
@@ -107,37 +195,53 @@ function setupViewMatrix(eye, target)
     return view;
 
 }
+
 function draw()
 {
+	var modelMatrix = identityMatrix();
 
 	var fovRadians = 70 * Math.PI / 180;
 	var aspectRatio = +gl.canvas.width / +gl.canvas.height;
-	var nearClip = 0.001;
-	var farClip = 20.0;
+	var nearClip = 0.0001;
+	var farClip = 200.0;
 
 	// perspective projection
-	var projectionMatrix = perspectiveMatrix(
-		fovRadians,
-		aspectRatio,
-		nearClip,
-		farClip,
-	);
+	if (document.querySelector("#projection").value == 'perspective'){
+		var projectionMatrix = perspectiveMatrix(
+			fovRadians,
+			aspectRatio,
+			nearClip,
+			farClip,
+		);
+	}
+	else{
+		var projectionMatrix = orthographicMatrix(
+			-gl.canvas.width/100,
+			gl.canvas.width/100, 
+			-gl.canvas.height/100, 
+			gl.canvas.height/100,
+			nearClip,
+			farClip,
+		);
+	}
+
+	//set up transformations to the model
+	var yRotMat = [];
+	var zRotMat = [];
+	var xRotMat = [];
+	var yAngle = (parseInt(document.querySelector("#rotation").value)/100) * (2 * Math.PI);
+	var zAngle = zRotation * 180/Math.PI;
+	var xAngle = xRotation * 180/Math.PI;
+	var zoom = 1 + (parseInt(document.querySelector("#scale").value)/200) * (10.0 - 1.0);
+	var height = 2 * (parseInt(document.querySelector("#height").value)/100);
+
 
 	// eye and target
-	var eye = [0, 5, 5];
 	var target = [0, 0, 0];
+	var eye = [0, 5, 5];
 
-	var modelMatrix = identityMatrix();
 
-	// TODO: set up transformations to the model
-
-	// setup viewing matrix
 	var eyeToTarget = subtract(target, eye);
-	var viewMatrix = setupViewMatrix(eye, target);
-
-	// model-view Matrix = view * model
-	var modelviewMatrix = multiplyMatrices(viewMatrix, modelMatrix);
-
 
 	// enable depth testing
 	gl.enable(gl.DEPTH_TEST);
@@ -150,7 +254,33 @@ function draw()
 
 	gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 	gl.useProgram(program);
-	
+
+
+	yRotMat = rotateYMatrix(yAngle);
+	xRotMat = rotateXMatrix(xAngle);
+	zRotMat = rotateZMatrix(zAngle);
+
+	//Going right to left (yRotMat * xRotMat) * zRotMat => rotMatrix
+	var rotMatrix = multiplyArrayOfMatrices([zRotMat, xRotMat, yRotMat])
+
+	var translationMatrix = translateMatrix(eyeX, 0, eyeZ);
+
+	//Transformation on model matrix 
+	//(((modelMatrix * height) * zoom) * rotation) * translation => desired model matrix 
+	modelMatrix = multiplyArrayOfMatrices([
+		translationMatrix,
+		rotMatrix,
+		scaleMatrix(zoom, zoom, zoom), 
+		scaleMatrix(1, height, 1), 
+		modelMatrix
+	]);
+
+
+	var viewMatrix = setupViewMatrix(eye, target);
+
+	// model-view Matrix = view * model
+	var modelviewMatrix = multiplyMatrices(viewMatrix, modelMatrix);
+
 	// update modelview and projection matrices to GPU as uniforms
 	gl.uniformMatrix4fv(uniformModelViewLoc, false, new Float32Array(modelviewMatrix));
 	gl.uniformMatrix4fv(uniformProjectionLoc, false, new Float32Array(projectionMatrix));
@@ -231,6 +361,11 @@ function addMouseCallback(canvas)
 {
 	isDragging = false;
 
+	var zoom = document.querySelector("#scale"); 
+	
+	var lastX = 0;
+	var lastY = 0;
+
 	canvas.addEventListener("mousedown", function (e) 
 	{
 		if (e.button === 0) {
@@ -244,6 +379,8 @@ function addMouseCallback(canvas)
 		isDragging = true;
 		startX = e.offsetX;
 		startY = e.offsetY;
+		lastX = startX;
+		lastY = startY;
 	});
 
 	canvas.addEventListener("contextmenu", function(e)  {
@@ -257,11 +394,12 @@ function addMouseCallback(canvas)
 		if (e.deltaY < 0) 
 		{
 			console.log("Scrolled up");
-			// e.g., zoom in
+			zoom.value = parseInt(zoom.value) + 5; //Increasing zoom scale 
 		} else {
 			console.log("Scrolled down");
-			// e.g., zoom out
+			zoom.value = parseInt(zoom.value) - 5; //Decreasing zoom scale
 		}
+
 	});
 
 	document.addEventListener("mousemove", function (e) {
@@ -273,7 +411,17 @@ function addMouseCallback(canvas)
 		var deltaY = currentY - startY;
 		console.log('mouse drag by: ' + deltaX + ', ' + deltaY);
 
-		// implement dragging logic
+		if(leftMouse){
+			zRotation += (currentX - lastX) * 0.001; //z rotation from horizontal mouse movement 
+			xRotation += (currentY - lastY) * -0.001; //x rotation from vertical mouse movement 
+		}
+		else{
+			eyeZ +=  ((currentY - lastY) * 0.01); //eyeZ translation along Z axis 
+
+			eyeX +=  ((currentX - lastX) * 0.01); //eyeX translation X axis
+		}
+		lastX = currentX;
+		lastY = currentY;
 	});
 
 	document.addEventListener("mouseup", function () {
@@ -302,14 +450,14 @@ function initialize()
 
 	// create buffers to put in box
 	var boxVertices = new Float32Array(box['positions']);
-	var posBuffer = createBuffer(gl, gl.ARRAY_BUFFER, boxVertices);
+	posBuffer = createBuffer(gl, gl.ARRAY_BUFFER, boxVertices);
 
 	var vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSrc);
 	var fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSrc);
 	program = createProgram(gl, vertexShader, fragmentShader);
 
 	// attributes (per vertex)
-	var posAttribLoc = gl.getAttribLocation(program, "position");
+	posAttribLoc = gl.getAttribLocation(program, "position");
 
 	// uniforms
 	uniformModelViewLoc = gl.getUniformLocation(program, 'modelview');
